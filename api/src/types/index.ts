@@ -1,0 +1,1 @@
+export type FileCategory = "image" | "doc" | "video" | "voice";

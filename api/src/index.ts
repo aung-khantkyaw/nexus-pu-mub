@@ -8,6 +8,7 @@ import { apiLimiter } from './middleware/rateLimiter';
 import logger from './config/logger';
 import userRoutes from './routes/userRoutes';
 import authRoutes from './routes/v1/authRoutes';
+import cookieParser from 'cookie-parser';
 
 dotenv.config();
 
@@ -20,9 +21,12 @@ app.use(cors());
 app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 // HTTP request logging
 app.use(morgan('combined', { stream: { write: (msg) => logger.info(msg.trim()) } }));
+
+app.use('/uploads', express.static('uploads'));
 
 // Rate limiting
 app.use('/api', apiLimiter);
