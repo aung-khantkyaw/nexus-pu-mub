@@ -18,14 +18,19 @@ enum Role {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  username     String   @unique
-  name         String
-  avatarUrl    String?
-  password     String
-  refreshToken String?  @unique
-  role         Role     @default(USER)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                   String    @id @default(uuid())
+  email                String    @unique
+  eduMail              String?   @unique
+  username             String    @unique
+  name                 String
+  avatarUrl            String?
+  password             String
+  refreshToken         String?   @unique
+  role                 Role      @default(USER)
+  resetPasswordToken   String?   @unique
+  resetPasswordExpires DateTime?
+  loginAttempts        Int       @default(0)
+  lockUntil            DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 }

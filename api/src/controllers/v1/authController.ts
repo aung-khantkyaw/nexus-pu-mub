@@ -1,17 +1,19 @@
 import { Request, Response } from "express";
 import bcrypt from "bcrypt";
+import crypto from "crypto"
 import logger from "@/config/logger";
 import jwt from "jsonwebtoken"
 import { prisma } from "@/lib/prisma";
 import fs from "fs/promises";
 import { AuthRequest } from "@/middleware/authMiddleware";
+import { sendMail } from "@/config/mailer";
 
 const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET;
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 
 if (!JWT_ACCESS_SECRET || !JWT_REFRESH_SECRET) {
   logger.error("FATAL ERROR: Missing JWT secrets in environment variables. Application cannot start.");
-  process.exit(1);
+  throw new Error("Missing JWT secrets in environment variables");
 }
 
 export const register = async (req: Request, res: Response) => {
@@ -120,9 +122,10 @@ export const login = async (req: Request, res: Response) => {
 
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 1000
+      maxAge: 7 * 24 * 60 * 1000,
+      path: '/'
     })
 
     res.status(200).json({
@@ -151,8 +154,27 @@ export const refreshToken = async (req:Request, res: Response) => {
       where: { id: decoded.id }
     });
 
-    if (!user || user.refreshToken !== token) {
+    if (!user) {
       res.status(403).json({ error: 'Invalid refresh token' });
+      return;
+    }
+
+    if (user.refreshToken !== token) {
+      logger.warn(`Security Alert: Refresh token reuse detected for user ID: ${user.id}. Revoking all sessions.`);
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { refreshToken: null }
+      });
+
+      res.clearCookie('refreshToken', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        path: '/'
+      });
+
+      res.status(403).json({ error: 'Security breach detected. All sessions revoked. Please log in again.' });
       return;
     }
 
@@ -162,11 +184,35 @@ export const refreshToken = async (req:Request, res: Response) => {
       { expiresIn: '15m' }
     );
 
+
+    const newRefreshToken = jwt.sign(
+      { id: user.id },
+      JWT_REFRESH_SECRET,
+      { expiresIn: '7d'}
+    )
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken: newRefreshToken }
+    });
+
+    res.cookie('refreshToken', newRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 1000,
+      path: '/'
+    })
+
     res.status(200).json({ accessToken: newAccessToken });
 
   } catch (error) {
-    logger.error('Error refreshing token', error);
-    res.status(500).json({ error: 'invalid or expired refresh token' });
+     if (error instanceof jwt.TokenExpiredError || error instanceof jwt.JsonWebTokenError) {
+      res.status(403).json({ error: 'Invalid or expired refresh token' });
+    } else {
+      logger.error('Error refreshing token', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
 }
 
@@ -186,8 +232,9 @@ export const logout = async (req: AuthRequest, res: Response) => {
   
     res.clearCookie('refreshToken', {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
+      path: '/'
     });
 
     res.status(200).json({ message: 'Logged out successfully' });
@@ -195,4 +242,57 @@ export const logout = async (req: AuthRequest, res: Response) => {
     logger.error('Error logging out user', error);
     res.status(500).json({ error: 'Internal server error' });
   }
+}
+
+export const forgotPassword = async (req:Request, res: Response) => {
+  const { email } = req.body;
+
+  if (!email) {
+    res.status(400).json({ error: 'Email is required' });
+    return;
+  }
+
+  try {
+    const user = await prisma.user.findUnique({ where: { email } });
+
+    if (!user) {
+      res.status(200).json({ message: 'If an account with that email exists, a password reset link has been sent.' });
+      return;
+    }
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const tokenExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetPasswordToken: hashedToken,
+        resetPasswordExpires: tokenExpiresAt
+      }
+    });
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const resetUrl = `${frontendUrl}/reset-password/${rawToken}`;
+
+    const htmlContent = `
+      <h1>Password Reset Request</h1>
+      <p>Hello ${user.name},</p>
+      <p>You requested a password reset. Click the link below to set a new password:</p>
+      <a href="${resetUrl}" target="_blank">Reset Password</a>
+      <p>This link will expire in 15 minutes.</p>
+      <p>If you didn't request this, please ignore this email.</p>
+    `;
+
+    await sendMail(user.email, 'Password Reset Request', htmlContent);
+
+    res.status(200).json({ message: 'If an account with that email exists, a password reset link has been sent.' });
+  } catch (error) {
+    logger.error('Error in forgot password request', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+export const resetPassword = async (req: Request, res: Response) => {
+  
 }

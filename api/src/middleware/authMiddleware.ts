@@ -6,11 +6,16 @@ const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET;
 
 if (!JWT_ACCESS_SECRET) {
   logger.error("FATAL ERROR: Missing JWT secrets in environment variables. Application cannot start.");
-  process.exit(1);
+  throw new Error("Missing JWT secrets in environment variables");
 }
 
+export interface AuthPayload {
+  id: string;
+  username: string;
+  role: string;
+}
 export interface AuthRequest extends Request {
-  user?: any;
+  user?: AuthPayload;
 }
 
 export const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -20,15 +25,10 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
     return res.status(401).json({ error: 'No token provided' });
   }
 
-  const token = authHeader && authHeader.split(' ')[1]; 
-
-  if (!token) {
-    res.status(401).json({ error: "Access token is missing" });
-    return;
-  }
+  const token = authHeader.split(' ')[1]; 
 
   try {
-    const decoded = jwt.verify(token, JWT_ACCESS_SECRET);
+    const decoded = jwt.verify(token, JWT_ACCESS_SECRET) as AuthPayload;
     req.user = decoded;
     next();
   } catch (error) {

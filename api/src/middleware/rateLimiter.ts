@@ -10,6 +10,12 @@ export const apiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+export const registerLimiter = rateLimit({
+  windowMs: FIFTEEN_MS,
+  max: 5,
+  message: 'Too many registration attempts, please try again later'
+})
+
 export const loginLimiter = rateLimit({
   windowMs: FIFTEEN_MS,
   max: 5,
