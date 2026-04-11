@@ -27,6 +27,12 @@ model User {
   password             String
   refreshToken         String?   @unique
   role                 Role      @default(USER)
+  emailVerified        DateTime?
+  verificationToken    String?   @unique
+  verificationExpires  DateTime?
+  pendingEmail         String?
+  emailChangeToken     String?   @unique
+  emailChangeExpires   DateTime?
   resetPasswordToken   String?   @unique
   resetPasswordExpires DateTime?
   loginAttempts        Int       @default(0)

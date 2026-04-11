@@ -12,6 +12,7 @@ if (!JWT_ACCESS_SECRET) {
 export interface AuthPayload {
   id: string;
   username: string;
+  email: string;
   role: string;
 }
 export interface AuthRequest extends Request {
@@ -35,4 +36,23 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
     res.status(403).json({ error: "Invalid or expired access token" });
     return;
   }
+};
+
+export const optionalAuthenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader?.startsWith('Bearer ')) {
+    return next();
+  }
+
+  const token = authHeader.split(' ')[1];
+
+  try {
+    const decoded = jwt.verify(token, JWT_ACCESS_SECRET as string) as AuthPayload;
+    req.user = decoded;
+  } catch (error) {
+    
+  }
+  
+  next();
 };
