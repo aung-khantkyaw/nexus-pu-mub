@@ -15,18 +15,63 @@ datasource db {
 enum Role {
   USER
   ADMIN
+  STUDENT
+  TEACHER
+}
+
+enum ProgramLevel {
+  UNDERGRADUATE
+  MASTER_DEGREE
+  PHD
+  DIPLOMA
+}
+
+enum StudentStatus {
+  ACTIVE
+  GRADUATED
+  DROPPED
+  SUSPENDED
+  PENDING_APPROVAL
+}
+
+enum TeacherStatus {
+  ACTIVE
+  TRANSFERRED
+  RETIRED
+  RESIGNED
+  ON_LEAVE
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  VISITING
+  CONTRACT
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
 }
 
 model User {
-  id                   String    @id @default(uuid())
-  email                String    @unique
-  eduMail              String?   @unique
-  username             String    @unique
-  name                 String
-  avatarUrl            String?
-  password             String
-  refreshToken         String?   @unique
-  role                 Role      @default(USER)
+  id           String  @id @default(uuid())
+  email        String  @unique
+  eduMail      String? @unique
+  username     String  @unique
+  name         String
+  avatarUrl    String?
+  password     String
+  refreshToken String? @unique
+  role         Role    @default(USER)
+
+  phoneNumber String?
+  dateOfBirth DateTime?
+  gender      Gender?
+  address     String?
+  nationalId  String?   @unique
+
   emailVerified        DateTime?
   verificationToken    String?   @unique
   verificationExpires  DateTime?
@@ -37,6 +82,187 @@ model User {
   resetPasswordExpires DateTime?
   loginAttempts        Int       @default(0)
   lockUntil            DateTime?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  lastLoginAt          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  student Student?
+  teacher Teacher?
+
+  createdTeachers  Teacher[] @relation("TeacherCreatedBy")
+  approvedStudents Student[] @relation("StudentApprovedBy")
+
+  @@index([role])
+  @@index([phoneNumber])
+  @@index([nationalId])
+}
+
+model Major {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  code        String  @unique
+  description String?
+
+  durationYears Int?
+  totalCredits  Int?
+  degreeOffered String?
+
+  students Student[]
+}
+
+model Department {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  code        String  @unique
+  description String?
+
+  establishedYear    Int?
+  phone              String?
+  email              String?
+
+  headOfDepartmentId String? @unique
+  headOfDepartment Teacher?  @relation("DepartmentHead", fields: [headOfDepartmentId], references: [id])
+  
+  teacher          Teacher[]
+
+  @@index([headOfDepartmentId])
+}
+
+model Position {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  level       Int     @default(0)
+  description String?
+
+  teacher Teacher[]
+}
+
+model AcademicYear {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  startDate DateTime
+  endDate   DateTime
+  // isActive  Boolean  @default(false)
+
+  semesters Semester[]
+
+  joinedStudents  Student[] @relation("JoinedYear")
+  // currentStudents Student[] @relation("CurrentYear")
+
+  joinedTeachers Teacher[] @relation("TeacherJoinedYear")
+  leftTeachers   Teacher[] @relation("TeacherLeftYear")
+}
+
+model Semester {
+  id String @id @default(uuid())
+
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  semesterNumber Int
+  startDate      DateTime
+  endDate        DateTime
+  isActive       Boolean  @default(false)
+
+  currentStudents Student[] @relation("CurrentSemester")
+
+  @@unique([academicYearId, semesterNumber])
+  @@index([academicYearId])
+  @@index([isActive])
+}
+
+model Student {
+  id String @id @default(uuid())
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  studentId String @unique
+
+  majorId String
+  major   Major  @relation(fields: [majorId], references: [id], onDelete: Restrict)
+
+  programLevel ProgramLevel
+  status       StudentStatus @default(PENDING_APPROVAL)
+
+  joinedAcademicYearId String
+  joinedAcademicYear   AcademicYear @relation("JoinedYear", fields: [joinedAcademicYearId], references: [id])
+
+  currentSemesterId String?
+  currentSemester   Semester? @relation("CurrentSemester", fields: [currentSemesterId], references: [id])
+
+  // currentAcademicYearId String?
+  // currentAcademicYear   AcademicYear? @relation("CurrentYear", fields: [currentAcademicYearId], references: [id])
+
+  approvedByUserId String?
+  approvedBy       User?     @relation("StudentApprovedBy", fields: [approvedByUserId], references: [id])
+  approvedAt       DateTime?
+  rejectionReason  String?
+
+  emergencyContact  String?
+  fatherName        String?
+  motherName        String?
+  bloodGroup        String?
+  religion          String?
+  nationality       String? @default("Myanmar")
+  previousEducation String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([majorId])
+  @@index([joinedAcademicYearId])
+  // @@index([currentAcademicYearId])
+  @@index([status])
+  @@index([approvedByUserId])
+}
+
+model Teacher {
+  id String @id @default(uuid())
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  teacherId String @unique
+
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
+  positionId String
+  position   Position @relation(fields: [positionId], references: [id], onDelete: Restrict)
+
+  employmentType EmploymentType @default(FULL_TIME)
+  status         TeacherStatus  @default(ACTIVE)
+
+  dutyStartDate DateTime
+  dutyEndDate   DateTime?
+
+  joinedAcademicYearId String
+  joinedAcademicYear   AcademicYear @relation("TeacherJoinedYear", fields: [joinedAcademicYearId], references: [id])
+
+  leftAcademicYearId String?
+  leftAcademicYear   AcademicYear? @relation("TeacherLeftYear", fields: [leftAcademicYearId], references: [id])
+
+  createdByUserId String?
+  createdBy       User?   @relation("TeacherCreatedBy", fields: [createdByUserId], references: [id])
+
+  qualification     String?
+  specialization    String?
+  bankAccountNumber String? @unique
+  salary            Int?
+
+  headedDepartment Department? @relation("DepartmentHead")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([departmentId])
+  @@index([positionId])
+  @@index([joinedAcademicYearId])
+  @@index([leftAcademicYearId])
+  @@index([status])
+  @@index([createdByUserId])
 }
