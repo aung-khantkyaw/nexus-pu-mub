@@ -4,12 +4,13 @@
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
 generator client {
-  provider = "prisma-client-js"
-  output   = "../src/generated"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
+  provider   = "postgresql"
+  extensions = [postgis]
 }
 
 enum Role {
@@ -32,6 +33,9 @@ enum StudentStatus {
   DROPPED
   SUSPENDED
   PENDING_APPROVAL
+  PROBATION
+  DEFERRED
+  WITHDRAWN
 }
 
 enum TeacherStatus {
@@ -53,6 +57,14 @@ enum Gender {
   MALE
   FEMALE
   OTHER
+}
+
+enum RoomType {
+  LECTURE_HALL
+  LABORATORY
+  LIBRARY
+  OFFICE
+  MEETING_ROOM
 }
 
 model User {
@@ -117,16 +129,58 @@ model Department {
   code        String  @unique
   description String?
 
-  establishedYear    Int?
-  phone              String?
-  email              String?
+  establishedYear Int?
+  phone           String?
+  email           String?
 
-  headOfDepartmentId String? @unique
-  headOfDepartment Teacher?  @relation("DepartmentHead", fields: [headOfDepartmentId], references: [id])
-  
-  teacher          Teacher[]
+  headOfDepartmentId String?  @unique
+  headOfDepartment   Teacher? @relation("DepartmentHead", fields: [headOfDepartmentId], references: [id])
+
+  teacher   Teacher[]
+  faculty   Faculty?  @relation(fields: [facultyId], references: [id])
+  facultyId String?
 
   @@index([headOfDepartmentId])
+}
+
+model Faculty {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  code        String  @unique
+  description String?
+
+  departments Department[]
+}
+
+model Campus {
+  id       String                               @id @default(uuid())
+  name     String                               @unique
+  location Unsupported("geometry(Point, 4326)")
+
+  buildings Building[]
+}
+
+model Building {
+  id   String  @id @default(uuid())
+  name String
+  code String?
+
+  campusId String
+  campus   Campus @relation(fields: [campusId], references: [id], onDelete: Cascade)
+
+  rooms Room[]
+}
+
+model Room {
+  id         String   @id @default(uuid())
+  roomNumber String
+  capacity   Int
+  type       RoomType @default(LECTURE_HALL)
+
+  buildingId String
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@unique([buildingId, roomNumber])
 }
 
 model Position {
@@ -147,7 +201,7 @@ model AcademicYear {
 
   semesters Semester[]
 
-  joinedStudents  Student[] @relation("JoinedYear")
+  joinedStudents Student[] @relation("JoinedYear")
   // currentStudents Student[] @relation("CurrentYear")
 
   joinedTeachers Teacher[] @relation("TeacherJoinedYear")
@@ -170,6 +224,41 @@ model Semester {
   @@unique([academicYearId, semesterNumber])
   @@index([academicYearId])
   @@index([isActive])
+}
+
+model TeacherQualification {
+  id String @id @default(uuid())
+
+  teacherId String
+  teacher   Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  degree      String
+  institution String
+  year        Int?
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([teacherId])
+}
+
+model PreviousEducation {
+  id String @id @default(uuid())
+
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  schoolName String
+  level      String
+  startDate  DateTime?
+  endDate    DateTime?
+  grade      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId])
 }
 
 model Student {
@@ -200,16 +289,16 @@ model Student {
   approvedAt       DateTime?
   rejectionReason  String?
 
-  emergencyContact  String?
-  fatherName        String?
-  motherName        String?
-  bloodGroup        String?
-  religion          String?
-  nationality       String? @default("Myanmar")
-  previousEducation String?
+  emergencyContact String?
+  fatherName       String?
+  motherName       String?
+  bloodGroup       String?
+  religion         String?
+  nationality      String? @default("Myanmar")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  previousEducations PreviousEducation[]
 
   @@index([userId])
   @@index([majorId])
@@ -248,9 +337,9 @@ model Teacher {
   createdByUserId String?
   createdBy       User?   @relation("TeacherCreatedBy", fields: [createdByUserId], references: [id])
 
-  qualification     String?
+  qualifications    TeacherQualification[]
   specialization    String?
-  bankAccountNumber String? @unique
+  bankAccountNumber String?                @unique
   salary            Int?
 
   headedDepartment Department? @relation("DepartmentHead")
